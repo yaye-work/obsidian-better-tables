@@ -1,6 +1,8 @@
 # Better Tables (Please)
 
-If you are frustrated with making tables, install this. This is an interactive table tool replaces the ```table``` code block. Just drag to resize and reorder, hover to insert, click to edit. Your data stays a plain Markdown table inside a code block, so it remains readable everywhere.
+If you are frustrated with making tables in your notes, install this. This is an interactive table tool replaces the ```table``` code block. Just drag to resize and reorder, hover to insert, click to edit. Your data stays a plain Markdown table inside a code block, so it remains readable everywhere.
+
+<img width="991" height="821" alt="Better Tables" src="https://github.com/user-attachments/assets/bb4daa93-479e-4f30-8520-eeb226110711" />
 
 ## Features
 
