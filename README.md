@@ -1,6 +1,6 @@
-# Better Tables
+# Better Tables (Please)
 
-Interactive, FigJam-style tables in your Obsidian notes — drag to resize and reorder, hover to insert, click to edit. Your data stays a plain Markdown table inside a fenced code block, so it remains readable everywhere.
+If you are frustrated with making tables, install this. This is an interactive table tool replaces the ```table``` code block. Just drag to resize and reorder, hover to insert, click to edit. Your data stays a plain Markdown table inside a code block, so it remains readable everywhere.
 
 ## Features
 
@@ -15,15 +15,10 @@ Interactive, FigJam-style tables in your Obsidian notes — drag to resize and r
 
 ## Usage
 
-Add a `table` code block. The body is an ordinary Markdown table:
+Add a `table` code block:
 
-````markdown
 ```table
-| Name | Role |
-| --- | --- |
-| Ada  | Eng  |
-```
-````
+Then, Hit Return to go to the next line where'd summon the interactive/visial table tool. 
 
 Or run the **Better Tables: Insert table** command from the command palette.
 
@@ -40,3 +35,6 @@ Column/row sizes are stored in a small trailing comment inside the block (e.g. `
 ## License
 
 [MIT](LICENSE)
+
+Happy noting! 
+Yaye
