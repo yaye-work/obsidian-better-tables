@@ -75,6 +75,7 @@ class TableWidget {
     this.insertColDots = [];
     this.insertRowDots = [];
     this.insertLineEl = null;
+    this.resizeObs = null;
     this.selected = null;
     this.deleteBtnEl = null;
     this.lineSelOutside = null;
@@ -121,11 +122,24 @@ class TableWidget {
         const td = tr.createEl("td");
         td.setText(cellText);
         if (r === 0) td.addClass("cp-table-header");
-        td.addEventListener("pointerdown", (e) => {
-          if (e.button === 0) {
-            e.stopPropagation();
-            e.preventDefault();
-            this.editCell(td, r, c);
+        // Use mousedown (not pointerdown): CodeMirror manages focus on mousedown,
+        // so this is the event we must intercept to stop the editor from yanking
+        // focus back out of the cell — which was eating the first Tab/Enter.
+        td.addEventListener("mousedown", (e) => {
+          if (e.button !== 0) return;
+          // Already editing this cell: leave the event alone so native caret
+          // placement and drag-to-select work.
+          if (this.editingCell === td) return;
+          e.preventDefault();
+          e.stopPropagation();
+          this.editCell(td, r, c, false);
+          // We suppressed the default caret placement above, so set the caret at
+          // the clicked point ourselves.
+          const range = this.doc.caretRangeFromPoint && this.doc.caretRangeFromPoint(e.clientX, e.clientY);
+          if (range) {
+            const sel = window.getSelection();
+            sel && sel.removeAllRanges();
+            sel && sel.addRange(range);
           }
         });
         td.addEventListener("input", () => window.requestAnimationFrame(() => this.layout()));
@@ -201,6 +215,13 @@ class TableWidget {
 
     this.bindChromeTracker();
     this.hideChrome();
+    // Reposition the chrome whenever the table's geometry changes — e.g. when
+    // the user switches themes (different cell padding/fonts reflow the table),
+    // web fonts finish loading, or the container resizes. Without this the
+    // handles/dividers stay pinned to the old layout and drift out of line.
+    if (this.resizeObs) this.resizeObs.disconnect();
+    this.resizeObs = new ResizeObserver(() => this.layout());
+    this.resizeObs.observe(this.tableEl);
     window.requestAnimationFrame(() => this.layout());
   }
 
@@ -468,10 +489,15 @@ class TableWidget {
   /** Pull the edited text into the model and end edit mode. Does NOT save
    *  unless doSave is set — structural actions flush then issue a single save. */
   commitCell(td, r, c, doSave) {
-    td.contentEditable = "false";
-    td.removeClass("is-editing-cell");
+    // Clear editing state BEFORE disabling contentEditable. Setting
+    // contentEditable=false on the focused cell fires a synchronous blur; if
+    // editingCell still pointed here, the once-blur handler would re-enter
+    // commitCell with doSave=true and trigger a save+re-render mid-navigation
+    // (which cancelled the first Tab/Enter).
     if (this.editingCell === td) this.editingCell = null;
     this.editingPos = null;
+    td.contentEditable = "false";
+    td.removeClass("is-editing-cell");
     const v = (td.textContent || "").trim();
     if (v !== this.cells[r][c]) {
       this.cells[r][c] = v;

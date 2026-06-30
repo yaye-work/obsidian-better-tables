@@ -23,18 +23,34 @@
 	display: inline-block;
 }
 
+/* Layout-critical resets are forced with !important so arbitrary themes can't
+   break the absolute-positioned chrome. Many themes restyle markdown tables
+   (e.g. `table { display: block; overflow-x: auto; max-width: 100% }` for
+   responsive layouts), which would otherwise wreck the geometry math. */
 .cp-table {
-	table-layout: fixed;
-	border-collapse: collapse;
+	display: table !important;
+	table-layout: fixed !important;
+	border-collapse: collapse !important;
+	border-spacing: 0 !important;
+	width: auto !important;
+	max-width: none !important;
+	margin: 0 !important;
 	background: var(--background-primary);
-	margin: 0;
+	box-shadow: none;
+}
+
+.cp-table tr {
+	display: table-row !important;
 }
 
 .cp-table td {
+	display: table-cell !important;
+	box-sizing: border-box !important;
 	border: 1px solid var(--background-modifier-border);
-	padding: 4px 8px;
+	padding: 4px 8px !important;
 	vertical-align: top;
 	font-size: var(--font-text-size);
+	line-height: var(--line-height-normal, 1.5);
 	color: var(--text-normal);
 	white-space: pre-wrap;
 	word-break: break-word;
