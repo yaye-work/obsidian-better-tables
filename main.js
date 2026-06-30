@@ -21,7 +21,13 @@ function parseMdTable(text) {
   for (const line of lines) {
     if (/^\s*\|[\s:|-]+\|\s*$/.test(line) && line.includes("-")) continue;
     const inner = line.trim().replace(/^\|/, "").replace(/\|$/, "");
-    rows.push(inner.split(/(?<!\\)\|/).map((c) => c.trim().replace(/\\\|/g, "|")));
+    rows.push(
+      inner
+        .split(/(?<!\\)\|/)
+        // Decode escaped pipes and our <br> line-break encoding back into the
+        // raw multi-line text the cell edits as.
+        .map((c) => c.trim().replace(/\\\|/g, "|").replace(/<br\s*\/?>/gi, "\n"))
+    );
   }
   if (!rows.length) return null;
   const width = Math.max(...rows.map((r) => r.length));
@@ -30,7 +36,9 @@ function parseMdTable(text) {
 }
 
 function mdFromCells(cells) {
-  const esc = (s) => s.replace(/\|/g, "\\|").replace(/\n/g, " ");
+  // Pipe tables can't contain a literal pipe or newline, so escape pipes and
+  // encode in-cell line breaks (Cmd+Enter) as <br>, which is valid table markup.
+  const esc = (s) => s.replace(/\|/g, "\\|").replace(/\n/g, "<br>");
   const row = (r) => "| " + r.map((c) => esc(c) || "   ").join(" | ") + " |";
   return [
     row(cells[0]),
@@ -120,29 +128,7 @@ class TableWidget {
       const tr = table.createEl("tr");
       row.forEach((cellText, c) => {
         const td = tr.createEl("td");
-        td.setText(cellText);
-        if (r === 0) td.addClass("cp-table-header");
-        // Use mousedown (not pointerdown): CodeMirror manages focus on mousedown,
-        // so this is the event we must intercept to stop the editor from yanking
-        // focus back out of the cell — which was eating the first Tab/Enter.
-        td.addEventListener("mousedown", (e) => {
-          if (e.button !== 0) return;
-          // Already editing this cell: leave the event alone so native caret
-          // placement and drag-to-select work.
-          if (this.editingCell === td) return;
-          e.preventDefault();
-          e.stopPropagation();
-          this.editCell(td, r, c, false);
-          // We suppressed the default caret placement above, so set the caret at
-          // the clicked point ourselves.
-          const range = this.doc.caretRangeFromPoint && this.doc.caretRangeFromPoint(e.clientX, e.clientY);
-          if (range) {
-            const sel = window.getSelection();
-            sel && sel.removeAllRanges();
-            sel && sel.addRange(range);
-          }
-        });
-        td.addEventListener("input", () => window.requestAnimationFrame(() => this.layout()));
+        this.bindCell(td, r, c, cellText);
       });
     });
     this.applySizes();
@@ -175,25 +161,24 @@ class TableWidget {
     this.rowHandles = [];
     this.colDividers = [];
     this.rowDividers = [];
+    // A divider sits on every column's right edge and every row's bottom edge —
+    // including the last column and last row, so the rightmost/bottommost borders
+    // are resizable too (previously impossible).
     for (let c = 0; c < cols; c++) {
       const h = root.createDiv({ cls: "cp-table-handle cp-table-handle-col", attr: { "aria-label": "Drag to reorder column" } });
       this.bindReorder(h, "col", c);
       this.colHandles.push(h);
-      if (c < cols - 1) {
-        const d = root.createDiv({ cls: "cp-table-divider cp-table-divider-col" });
-        this.bindResize(d, "col", c);
-        this.colDividers.push(d);
-      }
+      const d = root.createDiv({ cls: "cp-table-divider cp-table-divider-col" });
+      this.bindResize(d, "col", c);
+      this.colDividers.push(d);
     }
     for (let r = 0; r < rows; r++) {
       const h = root.createDiv({ cls: "cp-table-handle cp-table-handle-row", attr: { "aria-label": "Drag to reorder row" } });
       this.bindReorder(h, "row", r);
       this.rowHandles.push(h);
-      if (r < rows - 1) {
-        const d = root.createDiv({ cls: "cp-table-divider cp-table-divider-row" });
-        this.bindResize(d, "row", r);
-        this.rowDividers.push(d);
-      }
+      const d = root.createDiv({ cls: "cp-table-divider cp-table-divider-row" });
+      this.bindResize(d, "row", r);
+      this.rowDividers.push(d);
     }
 
     this.insertColDots = [];
@@ -426,6 +411,35 @@ class TableWidget {
   }
 
   // --- cell editing ---
+  /** Wire up a freshly created <td>: its text, header style, and the
+   *  click-to-edit / re-layout-on-input listeners. Shared by render() and
+   *  appendRowAndEdit() so both build identical cells. */
+  bindCell(td, r, c, text) {
+    td.setText(text);
+    if (r === 0) td.addClass("cp-table-header");
+    // Use mousedown (not pointerdown): CodeMirror manages focus on mousedown,
+    // so this is the event we must intercept to stop the editor from yanking
+    // focus back out of the cell — which was eating the first Tab/Enter.
+    td.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
+      // Already editing this cell: leave the event alone so native caret
+      // placement and drag-to-select work.
+      if (this.editingCell === td) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.editCell(td, r, c, false);
+      // We suppressed the default caret placement above, so set the caret at the
+      // clicked point ourselves.
+      const range = this.doc.caretRangeFromPoint && this.doc.caretRangeFromPoint(e.clientX, e.clientY);
+      if (range) {
+        const sel = window.getSelection();
+        sel && sel.removeAllRanges();
+        sel && sel.addRange(range);
+      }
+    });
+    td.addEventListener("input", () => window.requestAnimationFrame(() => this.layout()));
+  }
+
   editCell(td, r, c, fromKeyboard) {
     if (this.editingCell === td) return;
     this.finishEditing();
@@ -461,16 +475,55 @@ class TableWidget {
       td._btKeyBound = true;
       td.addEventListener("keydown", (e) => {
         if (this.editingCell !== td) return;
+        const mod = e.metaKey || e.ctrlKey;
+        // Cmd/Ctrl+A — select all text in THIS cell (not the whole note).
+        if (mod && (e.key === "a" || e.key === "A")) {
+          e.preventDefault();
+          e.stopPropagation();
+          const range = this.doc.createRange();
+          range.selectNodeContents(td);
+          const sel = window.getSelection();
+          sel && sel.removeAllRanges();
+          sel && sel.addRange(range);
+          return;
+        }
+        // Cmd/Ctrl+Enter — insert a line break inside the cell.
+        if (mod && e.key === "Enter") {
+          e.preventDefault();
+          e.stopPropagation();
+          this.insertText(td, "\n");
+          return;
+        }
         e.stopPropagation();
         if (e.key === "Escape") {
           e.preventDefault();
           td.blur();
         } else if (e.key === "Tab") {
           e.preventDefault();
-          this.editNeighbor(r, c, 0, e.shiftKey ? -1 : 1);
+          this.editNeighbor(r, c, 0, e.shiftKey ? -1 : 1, true);
         } else if (e.key === "Enter") {
           e.preventDefault();
-          this.editNeighbor(r, c, 1, 0);
+          // Enter on the last row grows the table and keeps editing in the new
+          // row, so you can keep typing down the column.
+          if (r === this.cells.length - 1) this.appendRowAndEdit(c);
+          else this.editNeighbor(r, c, 1, 0);
+        } else if (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "ArrowUp" || e.key === "ArrowDown") {
+          // Arrows move the caret within the cell until it hits an edge, then
+          // step to the adjacent cell.
+          const edge = this.getCaretEdges(td);
+          if (e.key === "ArrowLeft" && edge.atStart) {
+            e.preventDefault();
+            this.editNeighbor(r, c, 0, -1);
+          } else if (e.key === "ArrowRight" && edge.atEnd) {
+            e.preventDefault();
+            this.editNeighbor(r, c, 0, 1);
+          } else if (e.key === "ArrowUp" && edge.atTop) {
+            e.preventDefault();
+            this.editNeighbor(r, c, -1, 0);
+          } else if (e.key === "ArrowDown" && edge.atBottom) {
+            e.preventDefault();
+            this.editNeighbor(r, c, 1, 0);
+          }
         }
       });
     }
@@ -478,8 +531,9 @@ class TableWidget {
 
   /** Move to an adjacent cell. Commits the current cell into the model WITHOUT
    *  saving (so no file write / re-render happens mid-navigation, which would
-   *  tear down the DOM), and persists only when navigation leaves the table. */
-  editNeighbor(r, c, dr, dc) {
+   *  tear down the DOM). When `eject` is set, navigating past the table edge
+   *  commits + persists and exits; otherwise it's a no-op (stay in the cell). */
+  editNeighbor(r, c, dr, dc, eject = false) {
     let nr = r + dr;
     let nc = c + dc;
     if (nc >= this.cells[0].length) {
@@ -494,11 +548,73 @@ class TableWidget {
     const td = nr >= 0 && nr < this.cells.length && table && table.rows[nr] && table.rows[nr].cells[nc];
     if (td) {
       this.editCell(td, nr, nc, true);
-    } else {
+    } else if (eject) {
       // Navigated past the edge: commit and persist now.
       this.finishEditing();
       if (this.dirty) this.save();
     }
+  }
+
+  /** Append a new row to the model and DOM (no file write yet) and start editing
+   *  it in the given column, so Enter on the bottom row flows into a fresh row.
+   *  The save happens later when editing leaves the table, avoiding a mid-edit
+   *  re-render that would drop focus. */
+  appendRowAndEdit(col) {
+    this.finishEditing();
+    const nr = this.cells.length;
+    this.cells.push(this.cells[0].map(() => ""));
+    this.rowH.push(TABLE_CELL_H);
+    this.dirty = true;
+    const tr = this.tableEl.createEl("tr");
+    this.cells[nr].forEach((text, c) => {
+      const td = tr.createEl("td");
+      this.bindCell(td, nr, c, text);
+    });
+    this.applySizes();
+    const td = tr.cells[col];
+    if (td) this.editCell(td, nr, col, true);
+    this.layout();
+  }
+
+  /** Whether the caret sits at the start/end of the text and on the first/last
+   *  visual line — used to decide when an arrow key should leave the cell. */
+  getCaretEdges(td) {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return { atStart: true, atEnd: true, atTop: true, atBottom: true };
+    const range = sel.getRangeAt(0);
+    const pre = range.cloneRange();
+    pre.selectNodeContents(td);
+    pre.setEnd(range.startContainer, range.startOffset);
+    const atStart = range.collapsed && pre.toString().length === 0;
+    const post = range.cloneRange();
+    post.selectNodeContents(td);
+    post.setStart(range.endContainer, range.endOffset);
+    const atEnd = range.collapsed && post.toString().length === 0;
+    let atTop = atStart;
+    let atBottom = atEnd;
+    const caretRect = range.getBoundingClientRect();
+    if (caretRect && caretRect.height) {
+      const cellRect = td.getBoundingClientRect();
+      const lh = parseFloat(getComputedStyle(td).lineHeight) || 18;
+      atTop = caretRect.top - cellRect.top < lh * 0.75;
+      atBottom = cellRect.bottom - caretRect.bottom < lh * 0.75;
+    }
+    return { atStart, atEnd, atTop, atBottom };
+  }
+
+  /** Insert text at the caret inside a contentEditable cell. */
+  insertText(td, text) {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    range.deleteContents();
+    const node = this.doc.createTextNode(text);
+    range.insertNode(node);
+    range.setStartAfter(node);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    window.requestAnimationFrame(() => this.layout());
   }
 
   /** Pull the edited text into the model and end edit mode. Does NOT save
