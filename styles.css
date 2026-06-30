@@ -172,6 +172,18 @@
 	background: var(--background-modifier-error-hover, var(--background-modifier-hover));
 }
 
+/* whole-table delete: corner pill that fades in with the rest of the chrome */
+.cp-table-delete-table {
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 120ms ease;
+}
+
+.cp-table-delete-table.is-visible {
+	opacity: 1;
+	pointer-events: auto;
+}
+
 .cp-table-delete svg {
 	width: 14px;
 	height: 14px;

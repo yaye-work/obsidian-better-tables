@@ -86,6 +86,7 @@ class TableWidget {
     this.resizeObs = null;
     this.selected = null;
     this.deleteBtnEl = null;
+    this.deleteTableEl = null;
     this.lineSelOutside = null;
     this.lineSelKey = null;
   }
@@ -198,6 +199,20 @@ class TableWidget {
       this.insertRowDots.push(dot);
     }
 
+    // Delete-whole-table button: a trash pill at the table's top-left corner,
+    // revealed with the rest of the hover chrome.
+    this.deleteTableEl = root.createDiv({
+      cls: "cp-table-delete cp-table-delete-table",
+      attr: { "aria-label": "Delete table" }
+    });
+    setIcon(this.deleteTableEl, "trash-2");
+    this.deleteTableEl.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      e.preventDefault();
+      this.deleteTable();
+    });
+
     this.bindChromeTracker();
     this.hideChrome();
     // Reposition the chrome whenever the table's geometry changes — e.g. when
@@ -256,12 +271,14 @@ class TableWidget {
     this.addRowEl && this.addRowEl.toggleClass("is-visible", r === rows - 1);
     this.insertColDots.forEach((d, i) => d.toggleClass("is-visible", i === c - 1 || i === c));
     this.insertRowDots.forEach((d, i) => d.toggleClass("is-visible", i === r - 1 || i === r));
+    this.deleteTableEl && this.deleteTableEl.addClass("is-visible");
   }
 
   hideChrome() {
     const all = [...this.colHandles, ...this.rowHandles, ...this.insertColDots, ...this.insertRowDots];
     if (this.addColEl) all.push(this.addColEl);
     if (this.addRowEl) all.push(this.addRowEl);
+    if (this.deleteTableEl) all.push(this.deleteTableEl);
     for (const el of all) el.removeClass("is-visible");
     this.insertLineEl && this.insertLineEl.hide();
   }
@@ -377,6 +394,10 @@ class TableWidget {
         d.style.left = "-12px";
       }
     });
+    if (this.deleteTableEl) {
+      this.deleteTableEl.style.left = "-18px";
+      this.deleteTableEl.style.top = "-18px";
+    }
     this.positionDeleteBtn();
   }
 
@@ -487,11 +508,11 @@ class TableWidget {
           sel && sel.addRange(range);
           return;
         }
-        // Cmd/Ctrl+Enter — insert a line break inside the cell.
-        if (mod && e.key === "Enter") {
+        // Cmd/Ctrl+Enter or Shift+Enter — insert a line break inside the cell.
+        if ((mod || e.shiftKey) && e.key === "Enter") {
           e.preventDefault();
           e.stopPropagation();
-          this.insertText(td, "\n");
+          this.insertLineBreak(td);
           return;
         }
         e.stopPropagation();
@@ -602,19 +623,50 @@ class TableWidget {
     return { atStart, atEnd, atTop, atBottom };
   }
 
-  /** Insert text at the caret inside a contentEditable cell. */
-  insertText(td, text) {
-    const sel = window.getSelection();
-    if (!sel || !sel.rangeCount) return;
-    const range = sel.getRangeAt(0);
-    range.deleteContents();
-    const node = this.doc.createTextNode(text);
-    range.insertNode(node);
-    range.setStartAfter(node);
-    range.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(range);
+  /** Insert a hard line break at the caret. Uses a real <br> (a raw "\n" text
+   *  node won't render a trailing newline in contentEditable); execCommand
+   *  handles the trailing-<br> sentinel so the new line is visible. */
+  insertLineBreak(td) {
+    const ok = this.doc.execCommand && this.doc.execCommand("insertLineBreak");
+    if (!ok) {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount) {
+        const range = sel.getRangeAt(0);
+        range.deleteContents();
+        const br = this.doc.createElement("br");
+        range.insertNode(br);
+        // Sentinel <br> so the line renders when the break is at the very end.
+        const tail = this.doc.createElement("br");
+        br.after(tail);
+        range.setStartBefore(tail);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    }
     window.requestAnimationFrame(() => this.layout());
+  }
+
+  /** Read an edit-mode cell's DOM back to raw text, turning <br> and block
+   *  boundaries into newlines (so Cmd/Shift+Enter line breaks round-trip). */
+  cellText(td) {
+    const parts = [];
+    const walk = (node) => {
+      node.childNodes.forEach((n) => {
+        if (n.nodeType === 3) {
+          parts.push(n.nodeValue);
+        } else if (n.nodeName === "BR") {
+          parts.push("\n");
+        } else if (n.nodeName === "DIV" || n.nodeName === "P") {
+          if (parts.length && !parts[parts.length - 1].endsWith("\n")) parts.push("\n");
+          walk(n);
+        } else {
+          walk(n);
+        }
+      });
+    };
+    walk(td);
+    return parts.join("");
   }
 
   /** Pull the edited text into the model and end edit mode. Does NOT save
@@ -629,7 +681,7 @@ class TableWidget {
     this.editingPos = null;
     td.contentEditable = "false";
     td.removeClass("is-editing-cell");
-    const v = (td.textContent || "").trim();
+    const v = this.cellText(td).trim();
     if (v !== this.cells[r][c]) {
       this.cells[r][c] = v;
       this.dirty = true;
@@ -850,6 +902,61 @@ class TableWidget {
     }
     this.clearLineSelection();
     this.save();
+  }
+
+  /** Remove the entire ```table block (fences included) from the note. */
+  deleteTable() {
+    const el = this.el;
+    const ctx = this.ctx;
+    const plugin = this.plugin;
+    const oldBody = this.source;
+    const info = ctx.getSectionInfo(el);
+    plugin.queueWrite(async () => {
+      const file = plugin.app.vault.getAbstractFileByPath(ctx.sourcePath);
+      if (!file) return;
+      const sec = info || ctx.getSectionInfo(el);
+      try {
+        await plugin.app.vault.process(file, (data) => {
+          // 1) Precise path: drop the validated fenced line range, plus one
+          //    trailing blank line if present, so we don't leave a gap.
+          if (sec) {
+            const lines = data.split("\n");
+            const open = lines[sec.lineStart];
+            const close = lines[sec.lineEnd];
+            const fenceOpen = /^\s*(`{3,}|~{3,})\s*table\b/.test(open || "");
+            const fenceClose = /^\s*(`{3,}|~{3,})\s*$/.test(close || "");
+            if (fenceOpen && fenceClose) {
+              let end = sec.lineEnd;
+              if ((lines[end + 1] || "").trim() === "") end++;
+              lines.splice(sec.lineStart, end - sec.lineStart + 1);
+              return lines.join("\n");
+            }
+          }
+          // 2) Fallback: find the body, expand to the surrounding fences, and cut
+          //    the whole block — only if the body occurs exactly once.
+          if (oldBody && oldBody.trim()) {
+            const idx = data.indexOf(oldBody);
+            if (idx !== -1 && data.indexOf(oldBody, idx + 1) === -1) {
+              const before = data.slice(0, idx);
+              const after = data.slice(idx + oldBody.length);
+              const openMatch = before.match(/(?:^|\n)([ \t]*(?:`{3,}|~{3,})[ \t]*table\b[^\n]*\n)$/);
+              const closeMatch = after.match(/^(\s*\n?[ \t]*(?:`{3,}|~{3,})[ \t]*)/);
+              if (openMatch && closeMatch) {
+                const start = idx - openMatch[1].length;
+                let stop = idx + oldBody.length + closeMatch[1].length;
+                if (data[stop] === "\n") stop++;
+                return data.slice(0, start) + data.slice(stop);
+              }
+            }
+          }
+          return data; // couldn't locate the block safely — leave file untouched
+        });
+        new Notice("Better Tables: table deleted.");
+      } catch (err) {
+        console.error("Better Tables: delete failed", err);
+        new Notice("Better Tables: failed to delete table.");
+      }
+    });
   }
 
   makeGhost(axis, index) {
