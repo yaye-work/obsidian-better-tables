@@ -76,6 +76,34 @@
 	outline: none;
 }
 
+/* Rendered markdown inside a cell: strip block spacing so formatted content
+   sits flush like plain text. Any leftover block wrapper (lists, headings,
+   blockquotes) loses its outer margins. */
+.cp-table td p,
+.cp-table td ul,
+.cp-table td ol,
+.cp-table td h1,
+.cp-table td h2,
+.cp-table td h3,
+.cp-table td h4,
+.cp-table td h5,
+.cp-table td h6,
+.cp-table td blockquote,
+.cp-table td pre {
+	margin: 0 !important;
+	padding: 0;
+}
+
+.cp-table td ul,
+.cp-table td ol {
+	padding-inline-start: 1.4em;
+}
+
+/* While a cell is being edited it shows raw markdown source — keep it plain. */
+.cp-table td.is-editing-cell {
+	white-space: pre-wrap;
+}
+
 .cp-table td.cp-table-header {
 	font-weight: var(--font-semibold, 600);
 	background: var(--background-secondary);

@@ -1,6 +1,6 @@
 "use strict";
 
-const { Plugin, Notice, setIcon } = require("obsidian");
+const { Plugin, Notice, setIcon, MarkdownRenderer } = require("obsidian");
 
 const TABLE_CELL_W = 140;
 const TABLE_CELL_H = 48;
@@ -427,11 +427,31 @@ class TableWidget {
   }
 
   // --- cell editing ---
-  /** Wire up a freshly created <td>: its text, header style, and the
+  /** Render a cell's markdown source to formatted HTML. Editing swaps the cell
+   *  back to raw source (see editCell) and commitCell calls this again, so the
+   *  stored model value is always plain markdown. */
+  renderCell(td, text) {
+    td.empty();
+    if (!text) return;
+    MarkdownRenderer.render(this.plugin.app, text, td, this.ctx.sourcePath, this.plugin)
+      .then(() => {
+        if (this.editingCell === td) return; // user re-entered edit mid-render
+        // Unwrap the single wrapping <p> Obsidian adds so the cell stays compact
+        // and inline rather than gaining block paragraph spacing.
+        const p = td.childNodes.length === 1 && td.firstElementChild;
+        if (p && p.tagName === "P") {
+          while (p.firstChild) td.insertBefore(p.firstChild, p);
+          p.remove();
+        }
+      })
+      .catch(() => td.setText(text));
+  }
+
+  /** Wire up a freshly created <td>: its content, header style, and the
    *  click-to-edit / re-layout-on-input listeners. Shared by render() and
    *  appendRowAndEdit() so both build identical cells. */
   bindCell(td, r, c, text) {
-    td.setText(text);
+    this.renderCell(td, text);
     if (r === 0) td.addClass("cp-table-header");
     // Use mousedown (not pointerdown): CodeMirror manages focus on mousedown,
     // so this is the event we must intercept to stop the editor from yanking
@@ -461,6 +481,9 @@ class TableWidget {
     this.finishEditing();
     this.editingCell = td;
     this.editingPos = { r, c };
+    // Swap the rendered HTML for the raw markdown source so the user edits the
+    // source; commitCell re-renders it to formatted HTML.
+    td.setText(this.cells[r][c] || "");
     td.contentEditable = "true";
     td.addClass("is-editing-cell");
     // Always take keyboard focus so the cell captures the very first Tab/Enter.
@@ -501,6 +524,20 @@ class TableWidget {
           const sel = window.getSelection();
           sel && sel.removeAllRanges();
           sel && sel.addRange(range);
+          return;
+        }
+        // Cmd/Ctrl+B / I — wrap the selection in markdown markers instead of
+        // letting the browser inject <b>/<i> (which broke serialization).
+        if (mod && (e.key === "b" || e.key === "B")) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.wrapSelection("**");
+          return;
+        }
+        if (mod && (e.key === "i" || e.key === "I")) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.wrapSelection("*");
           return;
         }
         // Cmd/Ctrl+Enter or Shift+Enter — insert a line break inside the cell.
@@ -647,6 +684,30 @@ class TableWidget {
     window.requestAnimationFrame(() => this.layout());
   }
 
+  /** Wrap the current selection in markdown markers (e.g. ** for bold). With no
+   *  selection, inserts an empty pair and parks the caret between them. */
+  wrapSelection(marker) {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    const text = range.toString();
+    range.deleteContents();
+    const node = this.doc.createTextNode(marker + text + marker);
+    range.insertNode(node);
+    const after = this.doc.createRange();
+    if (text) {
+      // Place the caret just after the closing marker.
+      after.setStart(node, node.length);
+    } else {
+      // Empty: caret between the two markers, ready to type.
+      after.setStart(node, marker.length);
+    }
+    after.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(after);
+    window.requestAnimationFrame(() => this.layout());
+  }
+
   /** Read an edit-mode cell's DOM back to raw text, turning <br> and block
    *  boundaries into newlines (so Cmd/Shift+Enter line breaks round-trip). */
   cellText(td) {
@@ -686,6 +747,10 @@ class TableWidget {
       this.cells[r][c] = v;
       this.dirty = true;
     }
+    // Restore formatted markdown now that editing is done. (When doSave triggers
+    // a file write, Obsidian re-renders the whole block anyway, but this keeps
+    // the cell correct in the meantime and for the no-save flush path.)
+    this.renderCell(td, this.cells[r][c]);
     if (doSave) {
       if (this.dirty) this.save();
       else this.layout();
