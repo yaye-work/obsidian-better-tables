@@ -1,7 +1,7 @@
 {
 	"id": "better-tables",
 	"name": "Better Tables",
-	"version": "0.1.2",
+	"version": "0.1.3",
 	"minAppVersion": "1.5.0",
 	"description": "Interactive, FigJam-style tables in your notes: drag to resize and reorder, hover to insert, click to edit — stored as a plain markdown table inside a code block.",
 	"author": "yaye.work",

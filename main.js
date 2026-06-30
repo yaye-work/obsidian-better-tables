@@ -426,23 +426,28 @@ class TableWidget {
   }
 
   // --- cell editing ---
-  editCell(td, r, c) {
+  editCell(td, r, c, fromKeyboard) {
     if (this.editingCell === td) return;
     this.finishEditing();
     this.editingCell = td;
     this.editingPos = { r, c };
     td.contentEditable = "true";
     td.addClass("is-editing-cell");
+    // Always take keyboard focus so the cell captures the very first Tab/Enter.
+    // Only for keyboard navigation do we drop the caret at the end; for a click
+    // the caller (mousedown) places the caret at the clicked point.
     td.focus();
-    const range = this.doc.createRange();
-    range.selectNodeContents(td);
-    range.collapse(false);
-    const sel = window.getSelection();
-    sel && sel.removeAllRanges();
-    sel && sel.addRange(range);
-    // Blur commits and saves — unless the edit was already flushed (e.g. by a
-    // structural action), in which case editingCell has been cleared and this
-    // is a no-op so we never issue a second, racing save.
+    if (fromKeyboard) {
+      const range = this.doc.createRange();
+      range.selectNodeContents(td);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel && sel.removeAllRanges();
+      sel && sel.addRange(range);
+    }
+    // Blur commits and saves — unless the edit was already committed (e.g. by a
+    // structural action or keyboard navigation), in which case editingCell has
+    // been cleared and this is a no-op so we never issue a racing save.
     td.addEventListener(
       "blur",
       () => {
@@ -450,23 +455,30 @@ class TableWidget {
       },
       { once: true }
     );
-    td.addEventListener("keydown", (e) => {
-      e.stopPropagation();
-      if (e.key === "Escape") {
-        e.preventDefault();
-        td.blur();
-      } else if (e.key === "Tab") {
-        e.preventDefault();
-        td.blur();
-        this.editNeighbor(r, c, 0, e.shiftKey ? -1 : 1);
-      } else if (e.key === "Enter") {
-        e.preventDefault();
-        td.blur();
-        this.editNeighbor(r, c, 1, 0);
-      }
-    });
+    // Bind navigation keys once per cell so repeated edits don't stack handlers
+    // (which would double-fire Tab/Enter navigation).
+    if (!td._btKeyBound) {
+      td._btKeyBound = true;
+      td.addEventListener("keydown", (e) => {
+        if (this.editingCell !== td) return;
+        e.stopPropagation();
+        if (e.key === "Escape") {
+          e.preventDefault();
+          td.blur();
+        } else if (e.key === "Tab") {
+          e.preventDefault();
+          this.editNeighbor(r, c, 0, e.shiftKey ? -1 : 1);
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          this.editNeighbor(r, c, 1, 0);
+        }
+      });
+    }
   }
 
+  /** Move to an adjacent cell. Commits the current cell into the model WITHOUT
+   *  saving (so no file write / re-render happens mid-navigation, which would
+   *  tear down the DOM), and persists only when navigation leaves the table. */
   editNeighbor(r, c, dr, dc) {
     let nr = r + dr;
     let nc = c + dc;
@@ -478,12 +490,15 @@ class TableWidget {
       nc = this.cells[0].length - 1;
       nr--;
     }
-    if (nr < 0 || nr >= this.cells.length) return;
-    window.requestAnimationFrame(() => {
-      const table = this.el.querySelector(".cp-table");
-      const td = table && table.rows[nr] && table.rows[nr].cells[nc];
-      if (td) this.editCell(td, nr, nc);
-    });
+    const table = this.el.querySelector(".cp-table");
+    const td = nr >= 0 && nr < this.cells.length && table && table.rows[nr] && table.rows[nr].cells[nc];
+    if (td) {
+      this.editCell(td, nr, nc, true);
+    } else {
+      // Navigated past the edge: commit and persist now.
+      this.finishEditing();
+      if (this.dirty) this.save();
+    }
   }
 
   /** Pull the edited text into the model and end edit mode. Does NOT save
@@ -834,3 +849,5 @@ module.exports = class BetterTablesPlugin extends Plugin {
     return this._writeChain;
   }
 };
+
+/* nosourcemap */
