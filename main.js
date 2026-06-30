@@ -505,25 +505,37 @@ class TableWidget {
     // Right-click a cell → set its column's text alignment (markdown only
     // supports per-column alignment, so this applies to the whole column).
     td.addEventListener("contextmenu", (e) => {
-      if (this.editingCell) return;
+      if (this.editingCell) {
+        // A cell is being edited → Obsidian shows its native editor menu. Flag
+        // the column so the editor-menu hook can append Align to that menu
+        // (rather than us suppressing the native Cut/Copy/Paste).
+        this.plugin.pendingAlign = { widget: this, col: c, at: Date.now() };
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
-      const cur = this.colAlign[c] || "left";
       const menu = new Menu();
-      [
-        ["Align left", "align-left", "left"],
-        ["Align center", "align-center", "center"],
-        ["Align right", "align-right", "right"]
-      ].forEach(([title, icon, val]) => {
-        menu.addItem((i) =>
-          i
-            .setTitle(title)
-            .setIcon(icon)
-            .setChecked(cur === val)
-            .onClick(() => this.setColAlign(c, val))
-        );
-      });
+      this.addAlignItems(menu, c);
       menu.showAtMouseEvent(e);
+    });
+  }
+
+  /** Append the three column-alignment items to a menu. Shared by our own
+   *  right-click menu and the injected entries in Obsidian's editor menu. */
+  addAlignItems(menu, c) {
+    const cur = this.colAlign[c] || "left";
+    [
+      ["Align left", "align-left", "left"],
+      ["Align center", "align-center", "center"],
+      ["Align right", "align-right", "right"]
+    ].forEach(([title, icon, val]) => {
+      menu.addItem((i) =>
+        i
+          .setTitle(title)
+          .setIcon(icon)
+          .setChecked(cur === val)
+          .onClick(() => this.setColAlign(c, val))
+      );
     });
   }
 
@@ -1139,6 +1151,19 @@ module.exports = class BetterTablesPlugin extends Plugin {
     this.registerMarkdownCodeBlockProcessor("table", (source, el, ctx) => {
       new TableWidget(this, source, el, ctx).render();
     });
+
+    // When a table cell is being edited, Obsidian shows its native editor menu.
+    // The cell's contextmenu handler flags which column was clicked; here we
+    // append our Align items so they live alongside Cut/Copy/Paste.
+    this.registerEvent(
+      this.app.workspace.on("editor-menu", (menu) => {
+        const p = this.pendingAlign;
+        this.pendingAlign = null;
+        if (!p || Date.now() - p.at > 1000) return;
+        menu.addSeparator();
+        p.widget.addAlignItems(menu, p.col);
+      })
+    );
 
     this.addCommand({
       id: "insert-table",
