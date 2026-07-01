@@ -169,9 +169,11 @@
 	background: hsla(var(--interactive-accent-hsl), 0.14);
 }
 
-/* drag-selected block of cells */
+/* drag-selected block of cells: lighter tint plus an accent outline so the
+   cell's own grid border stays legible under the highlight */
 .cp-table td.cp-cell-selected {
-	background: hsla(var(--interactive-accent-hsl), 0.2);
+	background: hsla(var(--interactive-accent-hsl), 0.14);
+	box-shadow: inset 0 0 0 1px var(--interactive-accent);
 }
 
 .cp-table-delete {
