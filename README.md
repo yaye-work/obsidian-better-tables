@@ -1,8 +1,7 @@
 # Better Tables (Please)
 
 If you are frustrated with making tables in your notes, install this. Summon the interactive table via the ```Table``` block. Just drag to resize and reorder, hover to insert, click to edit.
-
-<img alt="Better Tables" src="https://github.com/user-attachments/assets/bb4daa93-479e-4f30-8520-eeb226110711" />
+<img alt="bettertables" src="https://github.com/user-attachments/assets/fccec811-d59e-4aca-bf2b-3ec37177494b" />
 
 ## Features
 
