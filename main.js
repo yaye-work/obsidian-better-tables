@@ -557,6 +557,15 @@ class TableWidget {
   /** Resolve a press on a cell into either a click (edit) or a drag (select a
    *  rectangular block of cells). */
   beginCellPointer(startTd, r0, c0, downEvt) {
+    // Spreadsheet model: a click SELECTS the cell; clicking again on the cell
+    // that's already the sole selection is what enters edit mode. Capture that
+    // "was already selected" state before clearing, so the mouseup can decide.
+    const wasSelected =
+      this.cellSel &&
+      this.cellSel.r0 === r0 &&
+      this.cellSel.c0 === c0 &&
+      this.cellSel.r1 === r0 &&
+      this.cellSel.c1 === c0;
     this.clearCellSelection();
     const startX = downEvt.clientX;
     const startY = downEvt.clientY;
@@ -576,7 +585,13 @@ class TableWidget {
       this.doc.removeEventListener("mousemove", onMove, true);
       this.doc.removeEventListener("mouseup", onUp, true);
       if (dragging) return; // selection stays
-      // A plain click: edit the cell, caret at the click point.
+      if (!wasSelected) {
+        // First click on this cell: just select it (single-cell selection).
+        this.clearLineSelection();
+        this.beginCellSelection(r0, c0);
+        return;
+      }
+      // Second click on the already-selected cell: edit it, caret at the click.
       this.editCell(startTd, r0, c0, false);
       const range = this.doc.caretRangeFromPoint && this.doc.caretRangeFromPoint(ev.clientX, ev.clientY);
       if (range) {
@@ -719,7 +734,7 @@ class TableWidget {
 
   editCell(td, r, c, fromKeyboard) {
     if (this.editingCell === td) return;
-    if (this.editingCell === td) return;
+    this.clearCellSelection();
     this.finishEditing();
     this.editingCell = td;
     this.editingPos = { r, c };
@@ -1352,4 +1367,5 @@ module.exports = class BetterTablesPlugin extends Plugin {
   }
 };
 
+/* nosourcemap */
 /* nosourcemap */
