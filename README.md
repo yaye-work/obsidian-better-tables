@@ -36,7 +36,7 @@ Go to the next line, you'd summoned you interactive table.
 Your table is saved as a normal Markdown table, so it still works everywhere else. Column widths and row heights are kept in a small hidden comment inside the block (e.g. `<!-- tk:cols=140,140;rows=48,48 -->`).
 
 ## Settings
-If you like to immediately select text (bypassing having to select the cell first), you can turn on ````Quick text edit```` in the setting.
+If you like to immediately select & edit text (bypassing having to select the cell first), you can turn on ````Quick text edit```` in the setting.
 
 ## Installation
 Add to Obsidian https://community.obsidian.md/plugins/better-tables
