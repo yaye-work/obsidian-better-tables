@@ -169,34 +169,22 @@
 	background: hsla(var(--interactive-accent-hsl), 0.14);
 }
 
-/* drag-selected block of cells: lighter tint on every cell, with the accent
-   border drawn only on the block's outer perimeter so a multi-cell selection
-   reads as one rectangle (no doubled-up interior outlines). Each edge class
-   fills its own box-shadow slot; the base rule composes all four, so any
-   combination of edges (sides, corners, single cell) just works. */
+/* drag-selected block of cells: a light accent tint on each cell. The outline
+   is drawn separately by .cp-cell-selbox (an overlay), so the cells' own grid
+   borders can't paint over it. */
 .cp-table td.cp-cell-selected {
 	background: hsla(var(--interactive-accent-hsl), 0.14);
-	--sel-t: inset 0 0 0 0 transparent;
-	--sel-r: inset 0 0 0 0 transparent;
-	--sel-b: inset 0 0 0 0 transparent;
-	--sel-l: inset 0 0 0 0 transparent;
-	box-shadow: var(--sel-t), var(--sel-r), var(--sel-b), var(--sel-l);
 }
 
-.cp-table td.cp-sel-top {
-	--sel-t: inset 0 1px 0 0 var(--interactive-accent);
-}
-
-.cp-table td.cp-sel-right {
-	--sel-r: inset -1px 0 0 0 var(--interactive-accent);
-}
-
-.cp-table td.cp-sel-bottom {
-	--sel-b: inset 0 -1px 0 0 var(--interactive-accent);
-}
-
-.cp-table td.cp-sel-left {
-	--sel-l: inset 1px 0 0 0 var(--interactive-accent);
+/* single overlay rectangle framing the whole selection, above the grid lines.
+   Border colour is the accent at 80% so it matches the rest of the table. */
+.cp-cell-selbox {
+	position: absolute;
+	z-index: 4;
+	pointer-events: none;
+	display: none;
+	box-sizing: border-box;
+	border: 1px solid hsla(var(--interactive-accent-hsl), 0.8);
 }
 
 .cp-table-delete {

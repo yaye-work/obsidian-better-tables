@@ -119,6 +119,7 @@ class TableWidget {
     this.cellSel = null;
     this.cellSelOutside = null;
     this.cellSelKey = null;
+    this.cellSelBox = null;
   }
 
   get doc() {
@@ -166,6 +167,7 @@ class TableWidget {
     this.clearLineSelection();
     this.clearCellSelection();
     this.el.empty();
+    this.cellSelBox = null; // detached with the old root; recreated on demand
     this.el.addClass("tk-block");
 
     const scroll = this.el.createDiv({ cls: "cp-table-scroll" });
@@ -394,6 +396,7 @@ class TableWidget {
   layout() {
     const t = this.tableEl;
     if (!t || !t.isConnected) return;
+    if (this.cellSel) this.positionCellSelBox();
     const tw = t.offsetWidth;
     const th = t.offsetHeight;
     if (this.addColEl) {
@@ -681,32 +684,54 @@ class TableWidget {
   highlightCellSelection() {
     const t = this.tableEl;
     if (!t) return;
-    const edges = ["cp-sel-top", "cp-sel-right", "cp-sel-bottom", "cp-sel-left"];
-    t.querySelectorAll("td.cp-cell-selected").forEach((td) => td.removeClasses(["cp-cell-selected", ...edges]));
-    if (!this.cellSel) return;
+    t.querySelectorAll("td.cp-cell-selected").forEach((td) => td.removeClass("cp-cell-selected"));
+    if (!this.cellSel) {
+      this.positionCellSelBox();
+      return;
+    }
     const { rA, rB, cA, cB } = this.selRect();
     for (let ri = rA; ri <= rB; ri++) {
       for (let ci = cA; ci <= cB; ci++) {
         const cell = t.rows[ri] && t.rows[ri].cells[ci];
-        if (!cell) continue;
-        cell.addClass("cp-cell-selected");
-        // Border only the block's outer perimeter, so adjacent selected cells
-        // read as one rectangle instead of stacking double interior outlines.
-        if (ri === rA) cell.addClass("cp-sel-top");
-        if (ri === rB) cell.addClass("cp-sel-bottom");
-        if (ci === cA) cell.addClass("cp-sel-left");
-        if (ci === cB) cell.addClass("cp-sel-right");
+        if (cell) cell.addClass("cp-cell-selected");
       }
     }
+    this.positionCellSelBox();
+  }
+
+  /** Draw the selection outline as one overlay rectangle above the grid, so the
+   *  cells' own borders can't paint over it (an inset box-shadow would sit under
+   *  those borders). Sized from the block's corner cells. */
+  positionCellSelBox() {
+    if (!this.cellSel) {
+      if (this.cellSelBox) this.cellSelBox.style.display = "none";
+      return;
+    }
+    const t = this.tableEl;
+    if (!t) return;
+    if (!this.cellSelBox) {
+      this.cellSelBox = this.rootEl.createDiv({ cls: "cp-cell-selbox" });
+    }
+    const { rA, rB, cA, cB } = this.selRect();
+    const a = t.rows[rA] && t.rows[rA].cells[cA];
+    const b = t.rows[rB] && t.rows[rB].cells[cB];
+    if (!a || !b) {
+      this.cellSelBox.style.display = "none";
+      return;
+    }
+    this.cellSelBox.style.display = "block";
+    this.cellSelBox.style.left = `${a.offsetLeft}px`;
+    this.cellSelBox.style.top = `${a.offsetTop}px`;
+    this.cellSelBox.style.width = `${b.offsetLeft + b.offsetWidth - a.offsetLeft}px`;
+    this.cellSelBox.style.height = `${b.offsetTop + b.offsetHeight - a.offsetTop}px`;
   }
 
   clearCellSelection() {
     if (this.tableEl) {
-      this.tableEl.querySelectorAll("td.cp-cell-selected").forEach((td) =>
-        td.removeClasses(["cp-cell-selected", "cp-sel-top", "cp-sel-right", "cp-sel-bottom", "cp-sel-left"])
-      );
+      this.tableEl.querySelectorAll("td.cp-cell-selected").forEach((td) => td.removeClass("cp-cell-selected"));
     }
     this.cellSel = null;
+    if (this.cellSelBox) this.cellSelBox.style.display = "none";
     if (this.cellSelOutside) {
       this.doc.removeEventListener("pointerdown", this.cellSelOutside, true);
       this.cellSelOutside = null;
