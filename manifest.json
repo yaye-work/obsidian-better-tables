@@ -1,7 +1,7 @@
 {
 	"id": "better-tables",
 	"name": "Better Tables",
-	"version": "0.2.1",
+	"version": "0.2.2",
 	"minAppVersion": "1.5.0",
 	"description": "Summon an interactive table with the Table block. Just drag to resize and reorder, hover to insert, click to edit.",
 	"author": "yaye.work",
