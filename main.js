@@ -675,21 +675,16 @@ class TableWidget {
         if (td) this.editCell(td, r0, c0, true);
       } else if (ev.key.length === 1 && !ev.metaKey && !ev.ctrlKey && !ev.altKey) {
         // Type-to-edit: typing on a selected cell starts editing and REPLACES
-        // its content with the typed character (spreadsheet behavior).
-        ev.preventDefault();
+        // its content (spreadsheet behavior). Empty the cell and let the
+        // browser's default insertion type the character — that way the caret
+        // naturally lands after it (manually placing the caret raced with
+        // focus and left it before the first letter).
         ev.stopPropagation();
         const { r0, c0 } = this.cellSel;
         const td = this.tableEl.rows[r0] && this.tableEl.rows[r0].cells[c0];
         if (!td) return;
         this.editCell(td, r0, c0, true);
-        td.setText(ev.key);
-        const range = this.doc.createRange();
-        range.selectNodeContents(td);
-        range.collapse(false);
-        const sel = window.getSelection();
-        sel && sel.removeAllRanges();
-        sel && sel.addRange(range);
-        window.requestAnimationFrame(() => this.layout());
+        td.setText("");
       }
     };
     this.doc.addEventListener("keydown", this.cellSelKey, true);
