@@ -47,15 +47,20 @@ Add to Obsidian https://community.obsidian.md/plugins/better-tables
 2. Copy them into `<your-vault>/.obsidian/plugins/better-tables/`.
 3. Reload Obsidian and enable **Better Tables** under Settings → Community plugins.
 
+## Support
+
+Thank you for using Better Tables! If you run into a bug or have an idea, please [open an issue](https://github.com/yaye-work/obsidian-better-tables/issues). Feature requests and bug reports are very welcome.
+And if you find inline notes useful, you can:
+
+[<img width=auto height="70" alt="buymea bubbletea" src="https://github.com/user-attachments/assets/0f9d8765-d124-4e63-8668-bf06100b7c0a" />](https://buymeacoffee.com/yaye.work)
+
+It's genuinely appreciated.
+
+Happy noting! 
+Yaye
+
 ## License
 
 [MIT](LICENSE)
 
-## Support
 
-Thank you for using Better Tables! If you run into a bug or have an idea, please [open an issue](https://github.com/yaye-work/obsidian-better-tables/issues). Feature requests and bug reports are very welcome.
-
-And if you like Better Tables, you can [buy me a coffee ☕](https://buymeacoffee.com/yaye.work). It's genuinely appreciated.
-
-Happy noting! 
-Yaye
